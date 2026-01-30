@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Koala Edition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { background-color: #fff5f7; color: #5d4a52; font-family: 'Inter', sans-serif; min-height: 100vh; }
+    .glass-card { background: rgba(255, 255, 255, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(244, 114, 182, 0.2); box-shadow: 0 10px 40px -10px rgba(244, 114, 182, 0.15); }
+    .btn-pink { background: linear-gradient(135deg, #f472b6, #ec4899); color: white; transition: 0.3s; }
+    .btn-pink:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(236, 72, 153, 0.3); }
+    .active-nav { background-color: #fdf2f8; color: #be185d; font-weight: bold; border-left: 4px solid #f472b6; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 登入視窗 -->
+  <div id="login-screen" class="fixed inset-0 flex items-center justify-center z-[100] px-6">
+    <div class="glass-card p-10 rounded-[2.5rem] w-full max-w-md text-center">
+      <div class="w-20 h-20 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
+        <i id="login-icon" class="fas fa-lock text-pink-500 text-3xl"></i>
+      </div>
+      <h2 id="login-title" class="text-2xl font-bold mb-8">管理員登入</h2>
+      
+      <div class="space-y-4">
+        <input type="password" id="login-password" placeholder="輸入密碼" class="w-full p-4 rounded-2xl border border-pink-100 outline-none bg-white/50 focus:ring-2 focus:ring-pink-200">
+        
+        <div id="login-2fa-container" class="hidden animate-fade-in">
+           <input type="text" id="login-2fa" placeholder="2FA 驗證碼" class="w-full p-4 rounded-2xl border border-pink-100 outline-none bg-white/50 focus:ring-2 focus:ring-pink-200">
+        </div>
+
+        <button onclick="handleLoginFlow()" id="login-btn" class="w-full py-4 rounded-2xl btn-pink font-bold">載入中...</button>
+      </div>
+      <p id="login-error" class="text-rose-500 text-sm mt-4 font-bold hidden"></p>
+    </div>
+  </div>
+
+  <!-- 2. 主介面 -->
+  <div id="admin-dashboard" class="hidden min-h-screen flex flex-col md:flex-row p-4 md:p-6 gap-6">
+    <aside class="w-full md:w-64 glass-card rounded-[2rem] p-6 flex flex-col shadow-xl">
+      <div class="font-bold text-xl mb-10 px-2 text-pink-600">Koala Admin</div>
+      <nav class="space-y-2 flex-1">
+        <div onclick="showSection('projects')" id="nav-projects" class="p-4 rounded-2xl cursor-pointer active-nav">作品管理</div>
+        <div onclick="showSection('settings')" id="nav-settings" class="p-4 rounded-2xl cursor-pointer">安全與設定</div>
+        <div onclick="showSection('messages')" id="nav-messages" class="p-4 rounded-2xl cursor-pointer">訊息中心</div>
+      </nav>
+      <button onclick="logout()" class="p-4 rounded-2xl text-pink-400 font-bold hover:bg-rose-50"><i class="fas fa-power-off mr-2"></i>登出</button>
+    </aside>
+
+    <main class="flex-1 overflow-y-auto space-y-6">
+      <!-- 作品管理 -->
+      <section id="sec-projects" class="section">
+        <h2 class="text-2xl font-bold mb-6">作品清單</h2>
+        <div id="project-list" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+      </section>
+
+      <!-- 設定區 -->
+      <section id="sec-settings" class="section hidden space-y-6">
+        <div class="glass-card p-8 rounded-[2rem] space-y-6">
+           <h3 class="font-bold border-b pb-2">安全設定</h3>
+           <div class="space-y-4">
+              <p class="text-sm font-bold text-pink-400">修改登入密碼</p>
+              <input type="password" id="old-pwd" placeholder="舊密碼" class="w-full p-3 rounded-xl border border-pink-50">
+              <input type="password" id="new-pwd" placeholder="新密碼" class="w-full p-3 rounded-xl border border-pink-50">
+              <button onclick="updatePassword()" class="btn-pink px-6 py-2 rounded-xl text-sm font-bold">儲存新密碼</button>
+           </div>
+           <hr>
+           <div class="space-y-4">
+              <p class="text-sm font-bold text-pink-400">雙重驗證 (2FA)</p>
+              <div id="2fa-ctrl" class="flex items-center justify-between bg-pink-50 p-4 rounded-2xl">
+                 <span id="2fa-status-label">狀態：檢測中...</span>
+                 <button id="2fa-btn" onclick="toggle2FA()" class="btn-pink px-4 py-1 rounded-lg text-xs">設定</button>
+              </div>
+              <!-- 2FA QR Display -->
+              <div id="2fa-display" class="hidden p-6 bg-white rounded-3xl text-center space-y-4 border border-pink-100">
+                 <img id="2fa-qr" class="mx-auto border-4 border-white shadow-sm" src="">
+                 <p class="text-xs font-mono" id="2fa-secret"></p>
+                 <div id="2fa-backups" class="grid grid-cols-2 gap-2 text-[10px] font-mono p-2 bg-gray-50 rounded"></div>
+              </div>
+           </div>
+        </div>
+      </section>
+
+      <!-- 訊息區 -->
+      <section id="sec-messages" class="section hidden">
+        <h2 class="text-2xl font-bold mb-6">訪客訊息</h2>
+        <div class="flex gap-6 h-[600px]">
+           <div id="session-list" class="w-64 glass-card rounded-[2rem] p-4 overflow-y-auto space-y-2"></div>
+           <div class="flex-1 glass-card rounded-[2rem] flex flex-col">
+              <div id="chat-box" class="flex-1 p-6 overflow-y-auto space-y-4"></div>
+              <div class="p-4 border-t flex gap-2">
+                 <input type="text" id="chat-input" class="flex-1 p-3 rounded-xl border" placeholder="回覆...">
+                 <button onclick="replyMsg()" class="btn-pink w-12 rounded-xl"><i class="fas fa-paper-plane"></i></button>
+              </div>
+           </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbyfmKJ6TrW_08RaRhYNZWU3DuBMt1U0_dYj1m398Reon0R3APBVkg_xoM-BUK3SYAau6w/exec";
+    let token = localStorage.getItem('admin_token');
+    let needsSetup = false;
+    let is2FAEnabled = false;
+    let currentSession = null;
+
+    // 啟動點：檢查狀態
+    window.onload = async () => {
+      try {
+        const res = await fetch(`${API_URL}?type=get_status`);
+        const data = await res.json();
+        needsSetup = data.needsSetup;
+        is2FAEnabled = data.is2FAEnabled;
+        syncLoginUI();
+        
+        if (!needsSetup && token) {
+          const check = await fetch(`${API_URL}?type=check_session&token=${token}`);
+          const valid = await check.json();
+          if (valid.status === 'success') enterDashboard();
+        }
+      } catch(e) { console.error("API Error", e); }
+    };
+
+    function syncLoginUI() {
+      const title = document.getElementById('login-title');
+      const btn = document.getElementById('login-btn');
+      const icon = document.getElementById('login-icon');
+      const twoFaField = document.getElementById('login-2fa-container');
+
+      if (needsSetup) {
+        title.textContent = "初次啟動：請設定密碼";
+        btn.textContent = "設定密碼並登入";
+        icon.className = "fas fa-user-plus text-pink-500 text-3xl";
+        twoFaField.classList.add('hidden');
+      } else {
+        title.textContent = "管理員登入";
+        btn.textContent = "進入系統";
+        icon.className = "fas fa-lock text-pink-500 text-3xl";
+        if (is2FAEnabled) twoFaField.classList.remove('hidden');
+        else twoFaField.classList.add('hidden');
+      }
+    }
+
+    async function handleLoginFlow() {
+      const pwd = document.getElementById('login-password').value;
+      const code = document.getElementById('login-2fa').value;
+      const err = document.getElementById('login-error');
+      
+      if (!pwd) return showError("請輸入密碼");
+      err.classList.add('hidden');
+
+      if (needsSetup) {
+        // 註冊邏輯
+        const res = await callAction('setupPassword', { newPassword: pwd });
+        if (res.status === 'success') { alert("設定成功！正在載入..."); location.reload(); }
+        else showError(res.message);
+      } else {
+        // 登入邏輯
+        const res = await callAction('login', { password: pwd, code: code });
+        if (res.status === 'success') {
+          token = res.token;
+          localStorage.setItem('admin_token', token);
+          enterDashboard();
+        } else showError(res.message);
+      }
+    }
+
+    function showError(msg) {
+      const err = document.getElementById('login-error');
+      err.textContent = msg;
+      err.classList.remove('hidden');
+    }
+
+    async function enterDashboard() {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('admin-dashboard').classList.remove('hidden');
+      update2FAStatusLabel();
+      fetchAdminData();
+    }
+
+    function logout() { localStorage.removeItem('admin_token'); location.reload(); }
+
+    async function fetchAdminData() {
+      const res = await fetch(`${API_URL}?type=api`);
+      const d = await res.json();
+      if (d.status === 'success') {
+        renderProjects(d.data);
+        is2FAEnabled = d.is2FAEnabled;
+        update2FAStatusLabel();
+      }
+    }
+
+    function renderProjects(data) {
+      const list = document.getElementById('project-list');
+      list.innerHTML = data.map(p => `
+        <div class="glass-card p-4 rounded-2xl flex items-center gap-4">
+          <img src="${p.imageUrl}" class="w-12 h-12 rounded-lg object-cover">
+          <div class="flex-1 font-bold">${p.title}</div>
+          <button class="text-rose-400 p-2"><i class="fas fa-trash"></i></button>
+        </div>
+      `).join('');
+    }
+
+    function update2FAStatusLabel() {
+      const label = document.getElementById('2fa-status-label');
+      const btn = document.getElementById('2fa-btn');
+      label.textContent = is2FAEnabled ? "狀態：保護中 (2FA 已啟用)" : "狀態：危險 (未啟用 2FA)";
+      label.className = is2FAEnabled ? "text-sm font-bold text-green-500" : "text-sm font-bold text-rose-500";
+      btn.textContent = is2FAE
