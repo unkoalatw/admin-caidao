@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - Koala Edition</title>
+  <!-- 修正 favicon 404 錯誤 -->
+  <link rel="icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAAAAMAtC9AAFFFvAA">
+  <!-- 恢復使用原本會觸發警告的 Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -28,7 +31,7 @@
       <div class="space-y-4">
         <input type="password" id="login-password" placeholder="輸入密碼" class="w-full p-4 rounded-2xl border border-pink-100 outline-none bg-white/50 focus:ring-2 focus:ring-pink-200">
         
-        <div id="login-2fa-container" class="hidden animate-fade-in">
+        <div id="login-2fa-container" class="hidden">
            <input type="text" id="login-2fa" placeholder="2FA 驗證碼" class="w-full p-4 rounded-2xl border border-pink-100 outline-none bg-white/50 focus:ring-2 focus:ring-pink-200">
         </div>
 
@@ -110,6 +113,7 @@
 
     // 啟動點：檢查狀態
     window.onload = async () => {
+      const btn = document.getElementById('login-btn');
       try {
         const res = await fetch(`${API_URL}?type=get_status`);
         const data = await res.json();
@@ -120,9 +124,17 @@
         if (!needsSetup && token) {
           const check = await fetch(`${API_URL}?type=check_session&token=${token}`);
           const valid = await check.json();
-          if (valid.status === 'success') enterDashboard();
+          if (valid.status === 'success') {
+            enterDashboard();
+          } else {
+            syncLoginUI();
+          }
         }
-      } catch(e) { console.error("API Error", e); }
+      } catch(e) { 
+        console.error("API Error", e);
+        btn.textContent = "連線失敗，請重新整理";
+        btn.classList.replace('btn-pink', 'bg-gray-400');
+      }
     };
 
     function syncLoginUI() {
@@ -153,19 +165,27 @@
       if (!pwd) return showError("請輸入密碼");
       err.classList.add('hidden');
 
-      if (needsSetup) {
-        // 註冊邏輯
-        const res = await callAction('setupPassword', { newPassword: pwd });
-        if (res.status === 'success') { alert("設定成功！正在載入..."); location.reload(); }
-        else showError(res.message);
-      } else {
-        // 登入邏輯
-        const res = await callAction('login', { password: pwd, code: code });
-        if (res.status === 'success') {
-          token = res.token;
-          localStorage.setItem('admin_token', token);
-          enterDashboard();
-        } else showError(res.message);
+      try {
+        if (needsSetup) {
+          const res = await callAction('setupPassword', { newPassword: pwd });
+          if (res.status === 'success') { 
+            alert("設定成功！正在載入..."); 
+            location.reload(); 
+          } else {
+            showError(res.message);
+          }
+        } else {
+          const res = await callAction('login', { password: pwd, code: code });
+          if (res.status === 'success') {
+            token = res.token;
+            localStorage.setItem('admin_token', token);
+            enterDashboard();
+          } else {
+            showError(res.message);
+          }
+        }
+      } catch(e) {
+        showError("登入時發生錯誤");
       }
     }
 
@@ -185,20 +205,25 @@
     function logout() { localStorage.removeItem('admin_token'); location.reload(); }
 
     async function fetchAdminData() {
-      const res = await fetch(`${API_URL}?type=api`);
-      const d = await res.json();
-      if (d.status === 'success') {
-        renderProjects(d.data);
-        is2FAEnabled = d.is2FAEnabled;
-        update2FAStatusLabel();
+      try {
+        const res = await fetch(`${API_URL}?type=api`);
+        const d = await res.json();
+        if (d.status === 'success') {
+          renderProjects(d.data);
+          is2FAEnabled = d.is2FAEnabled;
+          update2FAStatusLabel();
+        }
+      } catch(e) {
+        console.error("Fetch Data Error", e);
       }
     }
 
     function renderProjects(data) {
       const list = document.getElementById('project-list');
+      if (!data) return;
       list.innerHTML = data.map(p => `
         <div class="glass-card p-4 rounded-2xl flex items-center gap-4">
-          <img src="${p.imageUrl}" class="w-12 h-12 rounded-lg object-cover">
+          <img src="${p.imageUrl}" class="w-12 h-12 rounded-lg object-cover" onerror="this.src='https://placehold.co/100x100?text=No+Image'">
           <div class="flex-1 font-bold">${p.title}</div>
           <button class="text-rose-400 p-2"><i class="fas fa-trash"></i></button>
         </div>
@@ -208,6 +233,102 @@
     function update2FAStatusLabel() {
       const label = document.getElementById('2fa-status-label');
       const btn = document.getElementById('2fa-btn');
+      if (!label || !btn) return;
       label.textContent = is2FAEnabled ? "狀態：保護中 (2FA 已啟用)" : "狀態：危險 (未啟用 2FA)";
       label.className = is2FAEnabled ? "text-sm font-bold text-green-500" : "text-sm font-bold text-rose-500";
-      btn.textContent = is2FAE
+      btn.textContent = is2FAEnabled ? "停用 / 重設" : "立即啟用";
+    }
+
+    async function toggle2FA() {
+      try {
+        if (is2FAEnabled) {
+          const pwd = prompt("請輸入密碼以停用 2FA");
+          if (!pwd) return;
+          const res = await callAction('disable2FA', { password: pwd });
+          if (res.status === 'success') { 
+            is2FAEnabled = false; 
+            update2FAStatusLabel(); 
+            alert("2FA 已停用"); 
+          }
+        } else {
+          const res = await callAction('setup2FA', {});
+          if (res.status === 'success') {
+            const d = res.data;
+            document.getElementById('2fa-qr').src = d.qrUrl;
+            document.getElementById('2fa-secret').textContent = "金鑰：" + d.secret;
+            document.getElementById('2fa-backups').innerHTML = d.backupCodes.map(c => `<span>${c}</span>`).join('');
+            document.getElementById('2fa-display').classList.remove('hidden');
+            is2FAEnabled = true;
+            update2FAStatusLabel();
+          }
+        }
+      } catch(e) {
+        alert("設定失敗");
+      }
+    }
+
+    async function callAction(action, payload) {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action, token, payload })
+      });
+      return await res.json();
+    }
+
+    function showSection(id) {
+      ['projects', 'settings', 'messages'].forEach(s => {
+        const sec = document.getElementById(`sec-${s}`);
+        const nav = document.getElementById(`nav-${s}`);
+        if (sec) sec.classList.toggle('hidden', s !== id);
+        if (nav) nav.className = `p-4 rounded-2xl cursor-pointer ${s === id ? 'active-nav' : ''}`;
+      });
+      if (id === 'messages') fetchMessages();
+    }
+
+    async function fetchMessages() {
+      try {
+        const res = await callAction('getChatSessions', {});
+        if (res.status === 'success') {
+          document.getElementById('session-list').innerHTML = res.data.map(s => `
+            <div onclick="loadChat('${s.sessionId}')" class="p-3 bg-white/60 rounded-xl cursor-pointer hover:bg-pink-50 text-xs truncate">
+              ${s.sessionId.substr(-6)}: ${s.lastMessage}
+            </div>
+          `).join('');
+        }
+      } catch(e) {
+        console.error("Message Fetch Error", e);
+      }
+    }
+
+    async function loadChat(sid) {
+      currentSession = sid;
+      try {
+        const res = await callAction('getChatHistory', { sessionId: sid });
+        if (res.status === 'success') {
+          document.getElementById('chat-box').innerHTML = res.data.map(m => `
+            <div class="flex ${m.sender === 'Admin' ? 'justify-end' : 'justify-start'}">
+              <div class="p-2 rounded-xl text-xs ${m.sender === 'Admin' ? 'bg-pink-500 text-white' : 'bg-pink-50'}">
+                ${m.message}
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch(e) {
+        console.error("Chat History Error", e);
+      }
+    }
+
+    async function replyMsg() {
+      const i = document.getElementById('chat-input');
+      if (!i.value || !currentSession) return;
+      try {
+        await callAction('adminReply', { sessionId: currentSession, message: i.value });
+        i.value = ''; 
+        loadChat(currentSession);
+      } catch(e) {
+        alert("回覆失敗");
+      }
+    }
+  </script>
+</body>
+</html>
